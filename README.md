@@ -227,33 +227,6 @@ SMTP_PASS=your_16_char_app_password
 
 ---
 
-## Resume Bullet Points
-
-```
-• Built Watchly, a multi-tenant SaaS website-monitoring platform using SHA-256 hashing to 
-  detect content changes across public URLs, with automated branded email alerts via Nodemailer
-
-• Designed a passwordless, token-based identity system where tokens are SHA-256 hashed before 
-  storage and verified via Authorization headers — never exposed in URLs or logs
-
-• Hardened the scraping service against SSRF by resolving and validating target IPs against 
-  private/internal ranges before every request, closing a real-world attack vector
-
-• Implemented per-recipient email rate limiting, two-tier API rate limiting, scoped CORS, and 
-  payload size caps to prevent the service being weaponized for spam or resource abuse
-
-• Built a cron-based background scheduler with automatic retry/backoff and a three-state 
-  status model (active/changed/unreachable) reflecting real-world scraping outcomes
-
-• Engineered frontend resilience: a React Error Boundary, skeleton loading states, and automatic 
-  session recovery that gracefully handles expired credentials without manual intervention
-
-• Implemented self-service, type-to-confirm account deletion with full cascading data removal 
-  across all associated resources, alongside Terms of Use and Privacy Policy documentation
-```
-
----
-
 ## License
 
 MIT — free to use, fork, and learn from.
