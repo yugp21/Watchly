@@ -1,0 +1,1 @@
+module.exports = { scrapeText: jest.fn() };

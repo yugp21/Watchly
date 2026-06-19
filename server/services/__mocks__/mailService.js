@@ -1,0 +1,1 @@
+module.exports = { sendChangeAlert: jest.fn() };
