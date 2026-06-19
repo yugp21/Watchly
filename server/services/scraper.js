@@ -118,4 +118,4 @@ const scrapeText = async (url) => {
   return result;
 };
 
-module.exports = { scrapeText };
+module.exports = { scrapeText, assertPublicUrl, isPrivateIP };
