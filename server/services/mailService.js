@@ -16,7 +16,58 @@ const canSendTo = async (email) => {
   return count < DAILY_LIMIT_PER_RECIPIENT;
 };
 
-const sendChangeAlert = async (email, url, checkedAt, snapshot = null) => {
+// Sends a verification email when a new monitor is created
+const sendVerificationEmail = async (email, url, verifyToken) => {
+  const transporter = createTransporter();
+  const verifyUrl = `${process.env.CLIENT_URL}/verify-email?token=${verifyToken}`;
+
+  const hostname = (() => {
+    try { return new URL(url).hostname.replace(/^www\./, ''); }
+    catch { return url; }
+  })();
+
+  await transporter.sendMail({
+    from: `"Watchly" <${process.env.SMTP_USER}>`,
+    to: email,
+    subject: `Confirm your Watchly alert for ${hostname}`,
+    html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#F8F8F8;font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F8F8F8;padding:40px 16px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:16px;border:1px solid #E5E5E5;overflow:hidden;">
+        <tr>
+          <td style="padding:24px 28px;border-bottom:1px solid #F0F0F0;">
+            <span style="font-size:15px;font-weight:600;color:#111111;">● Watchly</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:28px;">
+            <h1 style="margin:0 0 8px;font-size:20px;font-weight:600;color:#111111;">Confirm your alert email</h1>
+            <p style="margin:0 0 24px;font-size:14px;color:#737373;line-height:1.5;">
+              Someone set up a Watchly monitor for <strong>${url}</strong> and added this email address to receive change alerts. Click below to confirm.
+            </p>
+            <a href="${verifyUrl}" style="display:inline-block;background:#111111;color:#ffffff;font-size:13px;font-weight:500;padding:10px 20px;border-radius:10px;text-decoration:none;">Confirm alert email →</a>
+            <p style="margin:24px 0 0;font-size:12px;color:#737373;">This link expires in 24 hours. If you didn't expect this email, ignore it — no alerts will be sent without confirmation.</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:16px 28px;border-top:1px solid #F0F0F0;background:#F8F8F8;">
+            <p style="margin:0;font-size:12px;color:#737373;">Watchly — website change monitoring.</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`,
+  });
+};
+
+// Change alert — now includes unsubscribe link
+const sendChangeAlert = async (email, url, checkedAt, snapshot = null, unsubscribeToken = null) => {
   const allowed = await canSendTo(email);
   if (!allowed) {
     console.warn(`[Mail] Daily limit reached for ${email}, skipping send.`);
@@ -33,6 +84,10 @@ const sendChangeAlert = async (email, url, checkedAt, snapshot = null) => {
     catch { return url; }
   })();
 
+  const unsubscribeUrl = unsubscribeToken
+    ? `${process.env.CLIENT_URL}/unsubscribe?token=${unsubscribeToken}`
+    : null;
+
   await transporter.sendMail({
     from: `"Watchly" <${process.env.SMTP_USER}>`,
     to: email,
@@ -40,57 +95,55 @@ const sendChangeAlert = async (email, url, checkedAt, snapshot = null) => {
     html: `
 <!DOCTYPE html>
 <html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="margin:0;padding:0;background:#F8F8F8;font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#F8F8F8;padding:40px 16px;">
-    <tr>
-      <td align="center">
-        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:16px;border:1px solid #E5E5E5;overflow:hidden;">
-          <tr>
-            <td style="padding:24px 28px;border-bottom:1px solid #F0F0F0;">
-              <table width="100%" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td style="font-size:15px;font-weight:600;color:#111111;letter-spacing:-0.3px;">● Watchly</td>
-                  <td align="right">
-                    <span style="background:#FFFBEB;border:1px solid #FDE68A;color:#B45309;font-size:11px;font-weight:500;padding:3px 8px;border-radius:6px;">Change detected</span>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:28px;">
-              <h1 style="margin:0 0 6px;font-size:20px;font-weight:600;color:#111111;letter-spacing:-0.3px;">Content change detected</h1>
-              <p style="margin:0 0 24px;font-size:14px;color:#737373;line-height:1.5;">A website you're monitoring has updated its content.</p>
-              <table width="100%" cellpadding="0" cellspacing="0" style="background:#F8F8F8;border:1px solid #E5E5E5;border-radius:10px;margin-bottom:20px;">
-                <tr><td style="padding:14px 18px;">
-                  <p style="margin:0 0 4px;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#737373;font-weight:500;">Website</p>
-                  <a href="${url}" style="font-size:14px;color:#111111;word-break:break-all;text-decoration:none;font-weight:500;">${url}</a>
-                </td></tr>
-              </table>
-              ${snapshot ? `
-              <table width="100%" cellpadding="0" cellspacing="0" style="background:#FFFBEB;border:1px solid #FDE68A;border-left:3px solid #F59E0B;border-radius:10px;margin-bottom:20px;">
-                <tr><td style="padding:14px 18px;">
-                  <p style="margin:0 0 8px;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#737373;font-weight:500;">What we saw on the page</p>
-                  <p style="margin:0;font-size:13px;color:#111111;line-height:1.6;">${snapshot.replace(/</g, '&lt;').replace(/>/g, '&gt;').substring(0, 300)}...</p>
-                </td></tr>
-              </table>
-              ` : ''}
-              <p style="margin:0 0 24px;font-size:13px;color:#737373;">Detected at ${formattedTime}</p>
-              <a href="${url}" style="display:inline-block;background:#111111;color:#ffffff;font-size:13px;font-weight:500;padding:10px 20px;border-radius:10px;text-decoration:none;">View website →</a>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:16px 28px;border-top:1px solid #F0F0F0;background:#F8F8F8;">
-              <p style="margin:0;font-size:12px;color:#737373;">You're receiving this because someone added this site to be monitored on Watchly, using this email address for alerts.</p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:16px;border:1px solid #E5E5E5;overflow:hidden;">
+        <tr>
+          <td style="padding:24px 28px;border-bottom:1px solid #F0F0F0;">
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="font-size:15px;font-weight:600;color:#111111;letter-spacing:-0.3px;">● Watchly</td>
+                <td align="right">
+                  <span style="background:#FFFBEB;border:1px solid #FDE68A;color:#B45309;font-size:11px;font-weight:500;padding:3px 8px;border-radius:6px;">Change detected</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:28px;">
+            <h1 style="margin:0 0 6px;font-size:20px;font-weight:600;color:#111111;letter-spacing:-0.3px;">Content change detected</h1>
+            <p style="margin:0 0 24px;font-size:14px;color:#737373;line-height:1.5;">A website you're monitoring has updated its content.</p>
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#F8F8F8;border:1px solid #E5E5E5;border-radius:10px;margin-bottom:20px;">
+              <tr><td style="padding:14px 18px;">
+                <p style="margin:0 0 4px;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#737373;font-weight:500;">Website</p>
+                <a href="${url}" style="font-size:14px;color:#111111;word-break:break-all;text-decoration:none;font-weight:500;">${url}</a>
+              </td></tr>
+            </table>
+            ${snapshot ? `
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#FFFBEB;border:1px solid #FDE68A;border-left:3px solid #F59E0B;border-radius:10px;margin-bottom:20px;">
+              <tr><td style="padding:14px 18px;">
+                <p style="margin:0 0 8px;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#737373;font-weight:500;">What we saw on the page</p>
+                <p style="margin:0;font-size:13px;color:#111111;line-height:1.6;">${snapshot.replace(/</g, '&lt;').replace(/>/g, '&gt;').substring(0, 300)}...</p>
+              </td></tr>
+            </table>
+            ` : ''}
+            <p style="margin:0 0 24px;font-size:13px;color:#737373;">Detected at ${formattedTime}</p>
+            <a href="${url}" style="display:inline-block;background:#111111;color:#ffffff;font-size:13px;font-weight:500;padding:10px 20px;border-radius:10px;text-decoration:none;">View website →</a>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:16px 28px;border-top:1px solid #F0F0F0;background:#F8F8F8;">
+            <p style="margin:0;font-size:12px;color:#737373;">
+              You're receiving this because someone added this site to Watchly using this email address.
+              ${unsubscribeUrl ? `<a href="${unsubscribeUrl}" style="color:#737373;">Unsubscribe</a>` : ''}
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
   </table>
 </body>
 </html>`,
@@ -99,7 +152,7 @@ const sendChangeAlert = async (email, url, checkedAt, snapshot = null) => {
   await EmailLog.create({ email });
 };
 
-// Sends a new token to the account's recovery email
+// Token recovery email
 const sendTokenRecovery = async (email, username, rawToken) => {
   const transporter = createTransporter();
 
@@ -110,45 +163,40 @@ const sendTokenRecovery = async (email, username, rawToken) => {
     html: `
 <!DOCTYPE html>
 <html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
 <body style="margin:0;padding:0;background:#F8F8F8;font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#F8F8F8;padding:40px 16px;">
-    <tr>
-      <td align="center">
-        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:16px;border:1px solid #E5E5E5;overflow:hidden;">
-          <tr>
-            <td style="padding:24px 28px;border-bottom:1px solid #F0F0F0;">
-              <span style="font-size:15px;font-weight:600;color:#111111;">● Watchly</span>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:28px;">
-              <h1 style="margin:0 0 8px;font-size:20px;font-weight:600;color:#111111;">Your new access token</h1>
-              <p style="margin:0 0 24px;font-size:14px;color:#737373;line-height:1.5;">A token recovery was requested for <strong>${username}</strong>. Your old token has been replaced — use this new one to access your account.</p>
-              <table width="100%" cellpadding="0" cellspacing="0" style="background:#F8F8F8;border:1px solid #E5E5E5;border-radius:10px;margin-bottom:24px;">
-                <tr><td style="padding:16px 18px;">
-                  <p style="margin:0 0 6px;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#737373;font-weight:500;">Your new token</p>
-                  <code style="font-size:13px;color:#111111;word-break:break-all;font-family:monospace;">${rawToken}</code>
-                </td></tr>
-              </table>
-              <p style="margin:0;font-size:13px;color:#737373;line-height:1.6;">Save this token somewhere safe — it won't be shown again. If you didn't request this, your account may have been compromised.</p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:16px 28px;border-top:1px solid #F0F0F0;background:#F8F8F8;">
-              <p style="margin:0;font-size:12px;color:#737373;">This email was sent to your Watchly recovery address.</p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:16px;border:1px solid #E5E5E5;overflow:hidden;">
+        <tr>
+          <td style="padding:24px 28px;border-bottom:1px solid #F0F0F0;">
+            <span style="font-size:15px;font-weight:600;color:#111111;">● Watchly</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:28px;">
+            <h1 style="margin:0 0 8px;font-size:20px;font-weight:600;color:#111111;">Your new access token</h1>
+            <p style="margin:0 0 24px;font-size:14px;color:#737373;line-height:1.5;">A token recovery was requested for <strong>${username}</strong>. Your old token has been replaced.</p>
+            <table width="100%" cellpadding="0" cellspacing="0" style="background:#F8F8F8;border:1px solid #E5E5E5;border-radius:10px;margin-bottom:24px;">
+              <tr><td style="padding:16px 18px;">
+                <p style="margin:0 0 6px;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#737373;font-weight:500;">Your new token</p>
+                <code style="font-size:13px;color:#111111;word-break:break-all;font-family:monospace;">${rawToken}</code>
+              </td></tr>
+            </table>
+            <p style="margin:0;font-size:13px;color:#737373;line-height:1.6;">Save this token somewhere safe — it won't be shown again.</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:16px 28px;border-top:1px solid #F0F0F0;background:#F8F8F8;">
+            <p style="margin:0;font-size:12px;color:#737373;">This email was sent to your Watchly recovery address.</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
   </table>
 </body>
 </html>`,
   });
 };
 
-module.exports = { sendChangeAlert, sendTokenRecovery };
+module.exports = { sendChangeAlert, sendVerificationEmail, sendTokenRecovery };
