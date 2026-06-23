@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const validator = require('validator');
 const Account = require('../models/Account');
 const Site = require('../models/Site');
+const { sendTokenRecovery } = require('../services/mailService');
 
 const generateUsername = () => {
   const adj = ['swift','calm','bright','silent','bold','cool','sharp','light','quick','keen','soft','warm'];
@@ -89,7 +90,7 @@ const renameAccount = async (req, res) => {
   }
 };
 
-// DELETE /api/accounts/delete — self-service account deletion
+// DELETE /api/accounts/delete
 const deleteAccount = async (req, res) => {
   try {
     const { username, token } = req.body;
@@ -98,7 +99,6 @@ const deleteAccount = async (req, res) => {
     const account = await Account.findOne({ username: username.trim(), token: hashToken(token.trim()) });
     if (!account) return res.status(401).json({ success: false, message: 'Invalid username or token.' });
 
-    // Delete all monitors belonging to this account, then the account itself
     await Site.deleteMany({ accountUsername: account.username });
     await account.deleteOne();
 
@@ -109,4 +109,38 @@ const deleteAccount = async (req, res) => {
   }
 };
 
-module.exports = { createAccount, importAccount, renameAccount, deleteAccount };
+// POST /api/accounts/recover
+// Generates a new token and emails it to the account's recovery email
+const recoverAccount = async (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!username || !username.trim()) {
+      return res.status(400).json({ success: false, message: 'Username is required.' });
+    }
+
+    const account = await Account.findOne({ username: username.trim() });
+
+    // Always return 200 — don't reveal whether username exists or has a recovery email
+    if (!account || !account.recoveryEmail) {
+      return res.json({ success: true, message: 'If this account has a recovery email, a new token has been sent.' });
+    }
+
+    const newRawToken = generateToken();
+    account.token = hashToken(newRawToken);
+    await account.save();
+
+    try {
+      await sendTokenRecovery(account.recoveryEmail, account.username, newRawToken);
+    } catch (mailErr) {
+      console.error('[recoverAccount] Failed to send recovery email:', mailErr.message);
+      return res.status(500).json({ success: false, message: 'Could not send recovery email. Try again later.' });
+    }
+
+    res.json({ success: true, message: 'If this account has a recovery email, a new token has been sent.' });
+  } catch (err) {
+    console.error('[recoverAccount]', err.message);
+    res.status(500).json({ success: false, message: 'Could not process recovery request.' });
+  }
+};
+
+module.exports = { createAccount, importAccount, renameAccount, deleteAccount, recoverAccount };

@@ -10,7 +10,6 @@ const createTransporter = () => nodemailer.createTransport({
   auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
 });
 
-// Prevents Watchly being abused to spam any single recipient address
 const canSendTo = async (email) => {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const count = await EmailLog.countDocuments({ email, sentAt: { $gte: since } });
@@ -50,7 +49,6 @@ const sendChangeAlert = async (email, url, checkedAt, snapshot = null) => {
     <tr>
       <td align="center">
         <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:16px;border:1px solid #E5E5E5;overflow:hidden;">
-
           <tr>
             <td style="padding:24px 28px;border-bottom:1px solid #F0F0F0;">
               <table width="100%" cellpadding="0" cellspacing="0">
@@ -63,19 +61,16 @@ const sendChangeAlert = async (email, url, checkedAt, snapshot = null) => {
               </table>
             </td>
           </tr>
-
           <tr>
             <td style="padding:28px;">
               <h1 style="margin:0 0 6px;font-size:20px;font-weight:600;color:#111111;letter-spacing:-0.3px;">Content change detected</h1>
               <p style="margin:0 0 24px;font-size:14px;color:#737373;line-height:1.5;">A website you're monitoring has updated its content.</p>
-
               <table width="100%" cellpadding="0" cellspacing="0" style="background:#F8F8F8;border:1px solid #E5E5E5;border-radius:10px;margin-bottom:20px;">
                 <tr><td style="padding:14px 18px;">
                   <p style="margin:0 0 4px;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#737373;font-weight:500;">Website</p>
                   <a href="${url}" style="font-size:14px;color:#111111;word-break:break-all;text-decoration:none;font-weight:500;">${url}</a>
                 </td></tr>
               </table>
-
               ${snapshot ? `
               <table width="100%" cellpadding="0" cellspacing="0" style="background:#FFFBEB;border:1px solid #FDE68A;border-left:3px solid #F59E0B;border-radius:10px;margin-bottom:20px;">
                 <tr><td style="padding:14px 18px;">
@@ -84,29 +79,76 @@ const sendChangeAlert = async (email, url, checkedAt, snapshot = null) => {
                 </td></tr>
               </table>
               ` : ''}
-
               <p style="margin:0 0 24px;font-size:13px;color:#737373;">Detected at ${formattedTime}</p>
               <a href="${url}" style="display:inline-block;background:#111111;color:#ffffff;font-size:13px;font-weight:500;padding:10px 20px;border-radius:10px;text-decoration:none;">View website →</a>
             </td>
           </tr>
-
           <tr>
             <td style="padding:16px 28px;border-top:1px solid #F0F0F0;background:#F8F8F8;">
               <p style="margin:0;font-size:12px;color:#737373;">You're receiving this because someone added this site to be monitored on Watchly, using this email address for alerts.</p>
             </td>
           </tr>
-
         </table>
       </td>
     </tr>
   </table>
 </body>
-</html>
-    `,
+</html>`,
   });
 
-  // Log the send for rate limiting
   await EmailLog.create({ email });
 };
 
-module.exports = { sendChangeAlert };
+// Sends a new token to the account's recovery email
+const sendTokenRecovery = async (email, username, rawToken) => {
+  const transporter = createTransporter();
+
+  await transporter.sendMail({
+    from: `"Watchly" <${process.env.SMTP_USER}>`,
+    to: email,
+    subject: `Your Watchly token for ${username}`,
+    html: `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background:#F8F8F8;font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F8F8F8;padding:40px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:16px;border:1px solid #E5E5E5;overflow:hidden;">
+          <tr>
+            <td style="padding:24px 28px;border-bottom:1px solid #F0F0F0;">
+              <span style="font-size:15px;font-weight:600;color:#111111;">● Watchly</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:28px;">
+              <h1 style="margin:0 0 8px;font-size:20px;font-weight:600;color:#111111;">Your new access token</h1>
+              <p style="margin:0 0 24px;font-size:14px;color:#737373;line-height:1.5;">A token recovery was requested for <strong>${username}</strong>. Your old token has been replaced — use this new one to access your account.</p>
+              <table width="100%" cellpadding="0" cellspacing="0" style="background:#F8F8F8;border:1px solid #E5E5E5;border-radius:10px;margin-bottom:24px;">
+                <tr><td style="padding:16px 18px;">
+                  <p style="margin:0 0 6px;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#737373;font-weight:500;">Your new token</p>
+                  <code style="font-size:13px;color:#111111;word-break:break-all;font-family:monospace;">${rawToken}</code>
+                </td></tr>
+              </table>
+              <p style="margin:0;font-size:13px;color:#737373;line-height:1.6;">Save this token somewhere safe — it won't be shown again. If you didn't request this, your account may have been compromised.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 28px;border-top:1px solid #F0F0F0;background:#F8F8F8;">
+              <p style="margin:0;font-size:12px;color:#737373;">This email was sent to your Watchly recovery address.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`,
+  });
+};
+
+module.exports = { sendChangeAlert, sendTokenRecovery };
