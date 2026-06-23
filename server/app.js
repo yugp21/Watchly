@@ -22,18 +22,31 @@ app.use(cors({
 
 app.use(express.json({ limit: '50kb' }));
 
+// Lightweight request logging — no extra dependency needed
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    console.log(`${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - start}ms`);
+  });
+  next();
+});
+
+const isTestEnv = process.env.NODE_ENV === 'test';
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   message: { success: false, message: 'Too many requests. Please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => isTestEnv,
 });
 
 const accountLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 10,
   message: { success: false, message: 'Too many account requests. Please try again later.' },
+  skip: () => isTestEnv,
 });
 
 app.use('/api', limiter);
@@ -41,7 +54,10 @@ app.use('/api/accounts/create', accountLimiter);
 
 app.use('/api/sites', siteRoutes);
 app.use('/api/accounts', accountRoutes);
-app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
+});
 
 // 404 handler — clean JSON for unknown routes instead of default HTML
 app.use((req, res) => {
