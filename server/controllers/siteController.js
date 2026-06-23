@@ -4,12 +4,11 @@ const Account = require('../models/Account');
 const { scrapeText } = require('../services/scraper');
 const { generateHash } = require('../services/hashService');
 const { hasChanged } = require('../services/diffChecker');
-const { sendChangeAlert } = require('../services/mailService');
+const { sendChangeAlert, sendVerificationEmail } = require('../services/mailService');
 
 const MAX_MONITORS_PER_ACCOUNT = 20;
 const VALID_INTERVALS = [1, 6, 12, 24];
 
-// Strips HTML/script tags from label to prevent stored XSS
 const sanitizeLabel = (label) =>
   (label || '')
     .replace(/<[^>]*>/g, '')
@@ -35,12 +34,7 @@ const getAllSites = async (req, res) => {
     res.json({
       success: true,
       data: sites,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit),
-      },
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     });
   } catch (err) {
     console.error('[GET /sites]', err.message);
@@ -91,7 +85,6 @@ const addSite = async (req, res) => {
       const text = await scrapeText(url);
       lastContentHash = generateHash(text);
     } catch (e) {
-      // Scrape failed on add — site saved as unreachable, will retry on next cron tick
       if (process.env.NODE_ENV !== 'test') {
         console.warn(`[Scraper] Initial scrape failed for ${url}: ${e.message}`);
       }
@@ -107,16 +100,77 @@ const addSite = async (req, res) => {
       lastChecked: lastContentHash ? new Date() : null,
       totalChecks: lastContentHash ? 1 : 0,
       status: lastContentHash ? 'active' : 'unreachable',
+      emailVerified: false,
     });
 
-    res.status(201).json({ success: true, data: site });
+    // Send verification email — monitoring alerts held until confirmed
+    try {
+      await sendVerificationEmail(email, url, site.verifyToken);
+    } catch (mailErr) {
+      if (process.env.NODE_ENV !== 'test') {
+        console.error('[addSite] Failed to send verification email:', mailErr.message);
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      data: site,
+      message: 'Monitor created. A verification email has been sent to the alert address.',
+    });
   } catch (err) {
     console.error('[POST /sites]', err.message);
     res.status(500).json({ success: false, message: 'Could not add monitor.' });
   }
 };
 
-// PUT /api/sites/:id — update label, email, checkInterval
+// GET /api/sites/verify-email?token=xxx — called when user clicks verification link
+const verifyEmail = async (req, res) => {
+  try {
+    const { token } = req.query;
+    if (!token) return res.status(400).json({ success: false, message: 'Verification token is required.' });
+
+    const site = await Site.findOne({ verifyToken: token });
+    if (!site) {
+      return res.status(404).json({ success: false, message: 'Invalid or expired verification link.' });
+    }
+
+    if (site.verifyTokenExpires < new Date()) {
+      return res.status(400).json({ success: false, message: 'Verification link has expired. Delete and re-add this monitor to get a new link.' });
+    }
+
+    site.emailVerified = true;
+    site.verifyToken = null;
+    site.verifyTokenExpires = null;
+    await site.save();
+
+    res.json({ success: true, message: 'Email verified. Change alerts are now active for this monitor.' });
+  } catch (err) {
+    console.error('[verifyEmail]', err.message);
+    res.status(500).json({ success: false, message: 'Could not verify email.' });
+  }
+};
+
+// GET /api/sites/unsubscribe?token=xxx — called from unsubscribe link in alert emails
+const unsubscribe = async (req, res) => {
+  try {
+    const { token } = req.query;
+    if (!token) return res.status(400).json({ success: false, message: 'Unsubscribe token is required.' });
+
+    const site = await Site.findOne({ unsubscribeToken: token });
+    if (!site) return res.status(404).json({ success: false, message: 'Invalid unsubscribe link.' });
+
+    // Mark email as unverified — stops future alerts without deleting the monitor
+    site.emailVerified = false;
+    await site.save();
+
+    res.json({ success: true, message: 'You have been unsubscribed from alerts for this monitor.' });
+  } catch (err) {
+    console.error('[unsubscribe]', err.message);
+    res.status(500).json({ success: false, message: 'Could not process unsubscribe request.' });
+  }
+};
+
+// PUT /api/sites/:id
 const updateSite = async (req, res) => {
   try {
     const site = await Site.findOne({ _id: req.params.id, accountUsername: req.username });
@@ -129,7 +183,16 @@ const updateSite = async (req, res) => {
       if (!validator.isEmail(cleaned)) {
         return res.status(400).json({ success: false, message: 'Please enter a valid email address.' });
       }
-      site.email = cleaned;
+      // If email changes, require re-verification
+      if (cleaned !== site.email) {
+        site.email = cleaned;
+        site.emailVerified = false;
+        site.verifyToken = require('crypto').randomBytes(32).toString('hex');
+        site.verifyTokenExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        try {
+          await sendVerificationEmail(cleaned, site.url, site.verifyToken);
+        } catch (_) {}
+      }
     }
 
     if (checkInterval !== undefined) {
@@ -189,10 +252,17 @@ const checkNow = async (req, res) => {
       site.lastContentHash = newHash;
       site.totalChanges += 1;
       const snapshot = text.slice(0, 300).trim();
-      site.changeHistory.unshift({ detectedAt: new Date(), emailSent: true, snapshot });
+      site.changeHistory.unshift({ detectedAt: new Date(), emailSent: site.emailVerified, snapshot });
       if (site.changeHistory.length > 10) site.changeHistory = site.changeHistory.slice(0, 10);
       await site.save();
-      try { await sendChangeAlert(site.email, site.url, site.lastChecked, snapshot); } catch (_) {}
+
+      // Only send alert if email has been verified
+      if (site.emailVerified) {
+        try {
+          await sendChangeAlert(site.email, site.url, site.lastChecked, snapshot, site.unsubscribeToken);
+        } catch (_) {}
+      }
+
       return res.json({ success: true, changed: true, data: site });
     }
 
@@ -206,4 +276,13 @@ const checkNow = async (req, res) => {
   }
 };
 
-module.exports = { getAllSites, addSite, updateSite, deleteSite, checkNow, MAX_MONITORS_PER_ACCOUNT };
+module.exports = {
+  getAllSites,
+  addSite,
+  updateSite,
+  deleteSite,
+  checkNow,
+  verifyEmail,
+  unsubscribe,
+  MAX_MONITORS_PER_ACCOUNT,
+};
