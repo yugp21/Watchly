@@ -125,6 +125,10 @@ Tests run against an in-memory MongoDB instance — no real database or network 
 | GET | `/api/sites/unsubscribe` | ❌ | Unsubscribe from alerts (called from email link) |
 | GET | `/api/health` | ❌ | Server health check |
 
+## Feedback & Support
+
+Found a bug or have a suggestion? [Open an issue](https://github.com/yugp21/Watchly/issues) on GitHub — it's the fastest way to get a response.
+
 ## Known Limitations
 
 - Static HTML scraping only (Cheerio) — JavaScript-rendered SPA pages are not fully supported.
