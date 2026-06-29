@@ -1,11 +1,12 @@
 import axios from 'axios';
 
-// Create a common Axios instance for all API requests
+const BASE_URL = import.meta.env.VITE_API_URL || '/api';
+
 const api = axios.create({
-    baseURL: '/api',
-    headers: {
-        'Content-Type': 'application/json'
-    }
+  baseURL: BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
 });
 
 // Generate Authorization header using username and token
