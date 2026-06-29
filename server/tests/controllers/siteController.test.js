@@ -26,26 +26,20 @@ describe("Site API", () => {
 
   describe("POST /api/sites", () => {
     it("returns 400 for invalid email", async () => {
-      const res = await request(app)
-        .post("/api/sites")
-        .set(headers)
-        .send({
-          url: "https://example.com",
-          email: "bad-email",
-          checkInterval: 1,
-        });
+      const res = await request(app).post("/api/sites").set(headers).send({
+        url: "https://example.com",
+        email: "bad-email",
+        checkInterval: 1,
+      });
       expect(res.status).toBe(400);
     });
 
     it("returns 400 for invalid checkInterval", async () => {
-      const res = await request(app)
-        .post("/api/sites")
-        .set(headers)
-        .send({
-          url: "https://example.com",
-          email: "a@b.com",
-          checkInterval: 3,
-        });
+      const res = await request(app).post("/api/sites").set(headers).send({
+        url: "https://example.com",
+        email: "a@b.com",
+        checkInterval: 3,
+      });
       expect(res.status).toBe(400);
     });
 
@@ -61,18 +55,17 @@ describe("Site API", () => {
         });
       expect(res.status).toBe(201);
       expect(res.body.data.status).toBe("active");
+      expect(res.body.data.emailVerified).toBe(false);
+      expect(res.body.message).toMatch(/verification email/i);
     });
 
     it("creates a site with unreachable status when scrape fails", async () => {
       scrapeText.mockRejectedValue(new Error("fail"));
-      const res = await request(app)
-        .post("/api/sites")
-        .set(headers)
-        .send({
-          url: "https://example.com",
-          email: "a@b.com",
-          checkInterval: 1,
-        });
+      const res = await request(app).post("/api/sites").set(headers).send({
+        url: "https://example.com",
+        email: "a@b.com",
+        checkInterval: 1,
+      });
       expect(res.status).toBe(201);
       expect(res.body.data.status).toBe("unreachable");
     });
@@ -102,29 +95,23 @@ describe("Site API", () => {
             checkInterval: 1,
           });
       }
-      const res = await request(app)
-        .post("/api/sites")
-        .set(headers)
-        .send({
-          url: "https://site21.com",
-          email: "a@b.com",
-          checkInterval: 1,
-        });
+      const res = await request(app).post("/api/sites").set(headers).send({
+        url: "https://site21.com",
+        email: "a@b.com",
+        checkInterval: 1,
+      });
       expect(res.status).toBe(403);
     });
 
     it("truncates label to 60 characters", async () => {
       scrapeText.mockResolvedValue("content");
       const longLabel = "x".repeat(100);
-      const res = await request(app)
-        .post("/api/sites")
-        .set(headers)
-        .send({
-          url: "https://labeltest.com",
-          email: "a@b.com",
-          checkInterval: 1,
-          label: longLabel,
-        });
+      const res = await request(app).post("/api/sites").set(headers).send({
+        url: "https://labeltest.com",
+        email: "a@b.com",
+        checkInterval: 1,
+        label: longLabel,
+      });
       expect(res.body.data.label.length).toBe(60);
     });
   });
@@ -139,14 +126,11 @@ describe("Site API", () => {
 
     it("deletes a site successfully", async () => {
       scrapeText.mockResolvedValue("content");
-      const create = await request(app)
-        .post("/api/sites")
-        .set(headers)
-        .send({
-          url: "https://deleteme.com",
-          email: "a@b.com",
-          checkInterval: 1,
-        });
+      const create = await request(app).post("/api/sites").set(headers).send({
+        url: "https://deleteme.com",
+        email: "a@b.com",
+        checkInterval: 1,
+      });
       const id = create.body.data._id;
       const res = await request(app).delete(`/api/sites/${id}`).set(headers);
       expect(res.status).toBe(200);
@@ -163,14 +147,11 @@ describe("Site API", () => {
 
     it("marks site unreachable if scrape fails on check-now", async () => {
       scrapeText.mockResolvedValueOnce("content");
-      const create = await request(app)
-        .post("/api/sites")
-        .set(headers)
-        .send({
-          url: "https://checknow1.com",
-          email: "a@b.com",
-          checkInterval: 1,
-        });
+      const create = await request(app).post("/api/sites").set(headers).send({
+        url: "https://checknow1.com",
+        email: "a@b.com",
+        checkInterval: 1,
+      });
       const id = create.body.data._id;
 
       scrapeText.mockRejectedValueOnce(new Error("down"));
@@ -183,14 +164,11 @@ describe("Site API", () => {
 
     it("detects a change, sends alert, and updates hash", async () => {
       scrapeText.mockResolvedValueOnce("original content");
-      const create = await request(app)
-        .post("/api/sites")
-        .set(headers)
-        .send({
-          url: "https://checknow2.com",
-          email: "a@b.com",
-          checkInterval: 1,
-        });
+      const create = await request(app).post("/api/sites").set(headers).send({
+        url: "https://checknow2.com",
+        email: "a@b.com",
+        checkInterval: 1,
+      });
       const id = create.body.data._id;
 
       // Simulate email being verified before alert can be sent
@@ -208,14 +186,11 @@ describe("Site API", () => {
 
     it("reports no change and does not send an email", async () => {
       scrapeText.mockResolvedValue("same content every time");
-      const create = await request(app)
-        .post("/api/sites")
-        .set(headers)
-        .send({
-          url: "https://checknow3.com",
-          email: "a@b.com",
-          checkInterval: 1,
-        });
+      const create = await request(app).post("/api/sites").set(headers).send({
+        url: "https://checknow3.com",
+        email: "a@b.com",
+        checkInterval: 1,
+      });
       const id = create.body.data._id;
       const res = await request(app)
         .post(`/api/sites/check-now/${id}`)
@@ -227,14 +202,11 @@ describe("Site API", () => {
 
     it("caps changeHistory at 10 entries", async () => {
       scrapeText.mockResolvedValueOnce("v0");
-      const create = await request(app)
-        .post("/api/sites")
-        .set(headers)
-        .send({
-          url: "https://history.com",
-          email: "a@b.com",
-          checkInterval: 1,
-        });
+      const create = await request(app).post("/api/sites").set(headers).send({
+        url: "https://history.com",
+        email: "a@b.com",
+        checkInterval: 1,
+      });
       const id = create.body.data._id;
 
       for (let i = 1; i <= 12; i++) {
